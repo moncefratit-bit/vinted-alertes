@@ -72,8 +72,6 @@
   /* Log items */
   .log-item{display:flex;gap:12px;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:10px 14px;align-items:center;margin-bottom:8px;text-decoration:none;color:inherit;transition:border-color .15s;position:relative}
   .log-item:hover{border-color:var(--border2)}
-  .log-item.deal-fire{border-color:#F4701B;border-width:1.5px}
-  .log-item.deal-great{border-color:#F5C842}
   .log-thumb{width:52px;height:52px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--bg2)}
   .log-body{flex:1;min-width:0}
   .log-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -81,14 +79,10 @@
   .log-price{font-size:15px;font-weight:600;color:var(--green)}
   .log-stars{font-size:12px;color:var(--amber)}
   .log-info{font-size:11px;color:var(--text3)}
-  .deal-badge{position:absolute;top:8px;right:8px;font-size:14px;line-height:1}
   .log-condition{font-size:11px;color:var(--text2);background:var(--bg2);border:0.5px solid var(--border);border-radius:20px;padding:1px 7px}
 
   /* Filters bar */
   .filters-bar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
-  .filter-chip{border:0.5px solid var(--border);border-radius:20px;padding:4px 12px;font-size:12px;cursor:pointer;background:var(--bg2);color:var(--text2);font-family:var(--font)}
-  .filter-chip.active{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
-
   .empty{text-align:center;padding:3.5rem 1rem;color:var(--text3);font-size:14px;line-height:1.7}
   .footer-hint{font-size:11px;color:var(--text3);text-align:center;padding-top:12px}
   .status-ok{color:var(--green);font-size:13px}
@@ -103,8 +97,7 @@ let S = {
   alerts:    [],
   logs:      [],
   tab:       'alerts',
-  logFilter: 'all',  // 'all' | 'fire' | 'great' | 'good'
-  form: { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'', maxHours:'' },
+  form: { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' },
   open:      false,
   tg:        { token:'', chatId:'' },
   tgStatus:  '',
@@ -128,7 +121,7 @@ setInterval(async () => {
     const [alerts, logs] = await Promise.all([api('GET','/api/alerts'), api('GET','/api/logs')]);
     S.alerts = alerts; S.logs = logs; render();
   }
-}, 15000);
+}, 5000);
 
 function set(p) { Object.assign(S, p); render(); }
 
@@ -137,14 +130,14 @@ window.addAlert = async () => {
   let body;
   if (f.mode==='url') {
     if (!f.url.trim()) return;
-    body = { name: f.name.trim()||f.url.trim(), sourceUrl: f.url.trim(), kw:'', stars: f.stars, excludeKw: f.excludeKw.trim(), maxHours: f.maxHours };
+    body = { name: f.name.trim()||f.url.trim(), sourceUrl: f.url.trim(), kw:'', stars: f.stars, excludeKw: f.excludeKw.trim() };
   } else {
     if (!f.kw.trim()) return;
-    body = { name: f.name.trim()||f.kw.trim(), kw: f.kw.trim(), max: f.max, min: f.min, condition: f.condition, stars: f.stars, excludeKw: f.excludeKw.trim(), maxHours: f.maxHours };
+    body = { name: f.name.trim()||f.kw.trim(), kw: f.kw.trim(), max: f.max, min: f.min, condition: f.condition, stars: f.stars, excludeKw: f.excludeKw.trim() };
   }
   const a = await api('POST', '/api/alerts', body);
   S.alerts = [...S.alerts, a];
-  S.form = { mode: f.mode, name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'', maxHours:'' };
+  S.form = { mode: f.mode, name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' };
   set({ open: false });
 };
 
@@ -177,7 +170,6 @@ window.switchTab   = t => set({ tab: t });
 window.toggleForm  = () => set({ open: !S.open });
 window.setMode     = m => { S.form.mode = m; render(); };
 window.fv          = (f,v) => { S.form[f] = v; };
-window.setFilter   = f => set({ logFilter: f });
 
 window.testTelegram = async () => {
   const token  = document.getElementById('tg-token')?.value.trim()  || '';
@@ -206,8 +198,6 @@ function fmtDate(ts){
   return d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
 }
 const CONDITIONS = {6:'Neuf étiquette',1:'Neuf sans étiquette',2:'Très bon état',3:'Bon état',4:'Satisfaisant'};
-const DEAL_EMOJI = {fire:'🔥',great:'⭐',good:'👍',normal:''};
-const DEAL_LABEL = {fire:'Excellent deal',great:'Très bon deal',good:'Bon deal',normal:''};
 
 function render(){
   const el = document.getElementById('app');
@@ -218,11 +208,7 @@ function render(){
   const totalBadge  = S.alerts.reduce((s,a)=>s+(a.badge||0),0);
   const f = S.form;
 
-  // Filtres actifs sur les logs
-  const filteredLogs = S.logFilter==='all' ? S.logs : S.logs.filter(l=>l.dealLevel===S.logFilter);
-  const fireCnt  = S.logs.filter(l=>l.dealLevel==='fire').length;
-  const greatCnt = S.logs.filter(l=>l.dealLevel==='great').length;
-  const goodCnt  = S.logs.filter(l=>l.dealLevel==='good').length;
+
 
   let html = `
   <div class="header">
@@ -282,16 +268,7 @@ function render(){
           <input type="text" placeholder="ex: pokemon, carte, jeux (séparés par des virgules)" value="${esc(f.excludeKw)}" oninput="fv('excludeKw',this.value)" />
           <div class="url-hint">Les annonces dont le titre contient ces mots ne seront pas remontées.</div>
         </div>
-        <div>
-          <div class="field-label">Fraîcheur</div>
-          <select onchange="fv('maxHours',this.value)">
-            <option value="" ${!f.maxHours?'selected':''}>Toutes les annonces</option>
-            <option value="1"  ${f.maxHours==='1'?'selected':''}>Postées il y a moins d'1h</option>
-            <option value="6"  ${f.maxHours==='6'?'selected':''}>Postées il y a moins de 6h</option>
-            <option value="24" ${f.maxHours==='24'?'selected':''}>Postées il y a moins de 24h</option>
-            <option value="72" ${f.maxHours==='72'?'selected':''}>Postées il y a moins de 3 jours</option>
-          </select>
-        </div>
+
         <div class="form-actions">
           <button class="btn-primary" onclick="addAlert()">Créer l'alerte</button>
           <button class="btn-ghost" onclick="toggleForm()">Annuler</button>
@@ -332,7 +309,6 @@ function render(){
             ${a.max?`<span class="tag tag-blue">≤${a.max}€</span>`:''}
             ${a.min?`<span class="tag tag-blue">≥${a.min}€</span>`:''}
             ${parseFloat(a.stars||0)>0?`<span class="tag tag-amber">★ ${a.stars}+</span>`:''}
-            ${a.maxHours?`<span class="tag tag-gray">⏱ <${a.maxHours}h</span>`:''}
             ${excl.map(kw=>`<span class="tag tag-red">✕ ${esc(kw)}</span>`).join('')}
           </div>
         </div>`;
@@ -342,23 +318,18 @@ function render(){
 
   // ── Logs ──
   if (S.tab==='logs') {
-    html += `<div class="filters-bar">
-      <button class="filter-chip ${S.logFilter==='all'?'active':''}" onclick="setFilter('all')">Tout (${S.logs.length})</button>
-      ${fireCnt>0 ?`<button class="filter-chip ${S.logFilter==='fire'?'active':''}"  onclick="setFilter('fire')">🔥 Excellent (${fireCnt})</button>`:''}
-      ${greatCnt>0?`<button class="filter-chip ${S.logFilter==='great'?'active':''}" onclick="setFilter('great')">⭐ Très bon (${greatCnt})</button>`:''}
-      ${goodCnt>0 ?`<button class="filter-chip ${S.logFilter==='good'?'active':''}"  onclick="setFilter('good')">👍 Bon (${goodCnt})</button>`:''}
-      <button class="btn-ghost" onclick="clearLogs()" style="font-size:12px;padding:4px 10px;margin-left:auto">Vider</button>
+    html += `<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn-ghost" onclick="clearLogs()" style="font-size:12px;padding:4px 10px">Vider</button>
     </div>`;
 
-    if (filteredLogs.length===0) {
+    if (S.logs.length===0) {
       html += `<div class="empty">Aucune annonce${S.logFilter!=='all'?' dans cette catégorie':' pour l\'instant'}.<br>Le serveur vérifie toutes les 15s.</div>`;
     } else {
-      filteredLogs.forEach(l => {
+      S.logs.forEach(l => {
         const href  = l.url?(l.url.startsWith('http')?l.url:'https://www.vinted.fr'+l.url):'#';
         const stars = l.stars!=null?(l.stars<=1?l.stars*5:l.stars).toFixed(1):null;
-        const deal  = l.dealLevel || 'normal';
         const cond  = CONDITIONS[l.condition] || '';
-        html += `<a class="log-item deal-${deal}" href="${esc(href)}" target="_blank" rel="noopener">
+        html += `<a class="log-item" href="${esc(href)}" target="_blank" rel="noopener">
           ${l.img?`<img class="log-thumb" src="${esc(l.img)}" loading="lazy"/>`:`<div class="log-thumb"></div>`}
           <div class="log-body">
             <div class="log-title">${esc(l.title)}</div>
@@ -369,7 +340,6 @@ function render(){
               <span class="log-info">${esc(l.aname)} · ${fmtDate(l.ts)} ${fmtTime(l.ts)}</span>
             </div>
           </div>
-          ${DEAL_EMOJI[deal]?`<div class="deal-badge">${DEAL_EMOJI[deal]}</div>`:''}
           <span style="font-size:14px;color:var(--text3);flex-shrink:0;margin-left:4px">→</span>
         </a>`;
       });
@@ -401,16 +371,7 @@ function render(){
         ${statusMsg?`<div style="text-align:center;padding:4px 0">${statusMsg}</div>`:''}
       </div>
     </div>
-    <div class="card">
-      <h2>📊 Score de deal</h2>
-      <div style="font-size:13px;color:var(--text2);line-height:1.8">
-        Le score compare le prix de l'annonce au <strong style="color:var(--text)">prix max</strong> que tu fixes dans l'alerte.<br>
-        <span style="font-size:16px">🔥</span> <strong style="color:var(--text)">Excellent</strong> — prix ≤ 50% du budget<br>
-        <span style="font-size:16px">⭐</span> <strong style="color:var(--text)">Très bon</strong> — prix ≤ 70% du budget<br>
-        <span style="font-size:16px">👍</span> <strong style="color:var(--text)">Bon deal</strong> — prix ≤ 85% du budget<br><br>
-        <span style="color:var(--text3);font-size:12px">Exemple : alerte Xbox Series S avec prix max 100€ → une annonce à 45€ = 🔥 Excellent deal</span>
-      </div>
-    </div>`;
+`;
   }
 
   html += `<div class="footer-hint">Serveur cloud · polling toutes les 15s · PC peut être éteint</div>`;
