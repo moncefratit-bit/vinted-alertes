@@ -291,7 +291,6 @@ async function handleConversationStep(chatId, text, conv) {
       min:       '',
       stars:     '4',
       excludeKw,
-      maxHours:  '',
       active:    true,
       badge:     0,
     };
@@ -310,57 +309,48 @@ async function handleConversationStep(chatId, text, conv) {
   }
 }
 
-// ── Long polling Telegram (getUpdates) ───────────────────────────────────────
-let tgOffset = 0;
-let tgPolling = false;
+// ── Webhook Telegram ─────────────────────────────────────────────────────────
+// Telegram pousse les messages directement vers /webhook/telegram
+// Beaucoup plus fiable que le long polling sur Railway
 
-async function tgGetUpdates() {
-  if (!DB.tg.token || !DB.tg.chatId) return;
+let tgPolling = false; // gardé pour compatibilité
+
+async function registerWebhook(appUrl) {
+  if (!DB.tg.token) return;
+  const webhookUrl = `${appUrl}/webhook/telegram`;
   try {
-    const url = `https://api.telegram.org/bot${DB.tg.token}/getUpdates?timeout=25&offset=${tgOffset}&allowed_updates=message`;
-    const r   = await new Promise((resolve, reject) => {
-      const req = https.request(new URL(url), { timeout: 30000 }, res => {
+    const body = JSON.stringify({ url: webhookUrl, allowed_updates: ['message'] });
+    const r    = await new Promise((resolve, reject) => {
+      const u   = new URL(`https://api.telegram.org/bot${DB.tg.token}/setWebhook`);
+      const req = https.request({ hostname: u.hostname, path: u.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 10000 }, res => {
         const c = []; res.on('data', d => c.push(d)); res.on('end', () => resolve(Buffer.concat(c).toString()));
       });
       req.on('error', reject);
       req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-      req.end();
+      req.write(body); req.end();
     });
-    const data = JSON.parse(r);
-    if (data.ok && data.result?.length) {
-      for (const upd of data.result) {
-        tgOffset = upd.update_id + 1;
-        if (upd.message) {
-          try { await handleTgMessage(upd.message); } catch(e) { console.log('[bot] erreur handler:', e.message); }
-        }
-      }
+    const d = JSON.parse(r);
+    if (d.ok) {
+      console.log(`[bot] Webhook enregistré → ${webhookUrl}`);
+      tgPolling = true;
+    } else {
+      console.log('[bot] Erreur webhook:', d.description);
     }
   } catch(e) {
-    if (!e.message.includes('timeout')) console.log('[bot] getUpdates erreur:', e.message);
+    console.log('[bot] Erreur enregistrement webhook:', e.message);
   }
 }
 
+// Appelé au démarrage et quand les settings sont sauvegardés
 async function startTgBot() {
-  if (tgPolling) return;
-  tgPolling = true;
-  console.log('[bot] Bot Telegram démarré — en attente de commandes...');
-  // Ignorer les anciens messages au démarrage
-  try {
-    const r = await new Promise((res, rej) => {
-      const req = https.request(new URL(`https://api.telegram.org/bot${DB.tg.token}/getUpdates?offset=-1`), {timeout:5000}, r => { const c=[]; r.on('data',d=>c.push(d)); r.on('end',()=>res(Buffer.concat(c).toString())); });
-      req.on('error', rej); req.end();
-    });
-    const d = JSON.parse(r);
-    if (d.result?.length) tgOffset = d.result[d.result.length-1].update_id + 1;
-  } catch {}
-
-  const loop = async () => {
-    while (tgPolling) {
-      await tgGetUpdates();
-      await new Promise(r => setTimeout(r, 500));
-    }
-  };
-  loop();
+  const appUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : process.env.APP_URL || '';
+  if (!appUrl) {
+    console.log('[bot] APP_URL non définie — webhook non enregistré');
+    return;
+  }
+  await registerWebhook(appUrl);
 }
 
 // ── Polling ───────────────────────────────────────────────────────────────────
@@ -521,7 +511,7 @@ const server = http.createServer(async (req, res) => {
     if (b.token)               DB.tg.token  = b.token;
     if (b.chatId !== undefined) DB.tg.chatId = b.chatId;
     dbSave();
-    if (DB.tg.token && DB.tg.chatId && !tgPolling) startTgBot();
+    if (DB.tg.token && DB.tg.chatId) startTgBot();
     return jsonRes(res, 200, { ok: true });
   }
 
@@ -531,11 +521,23 @@ const server = http.createServer(async (req, res) => {
     const cid = b.chatId || DB.tg.chatId;
     if (!tok || !cid) return jsonRes(res, 400, { error: 'Token ou Chat ID manquant' });
     const d = await tgSend('✅ *Vinted Alertes connecté !*\nTu recevras tes notifications ici.\n\nTape /aide dans ce chat pour gérer tes alertes.', tok, cid);
-    if (d.ok) { DB.tg = { token: tok, chatId: cid }; dbSave(); }
+    if (d.ok) { DB.tg = { token: tok, chatId: cid }; dbSave(); startTgBot(); }
     return jsonRes(res, d.ok ? 200 : 400, d);
   }
 
   if (p === '/health') return jsonRes(res, 200, { ok: true, alerts: DB.alerts.filter(a=>a.active).length, uptime: Math.round(process.uptime()) });
+
+  // ── Réception des messages Telegram (webhook) ──
+  if (p === '/webhook/telegram' && me === 'POST') {
+    try {
+      const b = await readBody(req);
+      if (b.message) {
+        handleTgMessage(b.message).catch(e => console.log('[bot] handler erreur:', e.message));
+      }
+    } catch {}
+    res.writeHead(200); res.end('ok');
+    return;
+  }
 
   res.writeHead(404); res.end('Not found');
 });
@@ -549,7 +551,7 @@ server.listen(PORT, async () => {
   setTimeout(() => { pollAll(); setInterval(pollAll, POLL_MS); }, 3000);
   // Démarrer le bot Telegram si configuré
   if (DB.tg.token && DB.tg.chatId) {
-    setTimeout(startTgBot, 3000);
+    setTimeout(startTgBot, 4000);
   }
 });
 
