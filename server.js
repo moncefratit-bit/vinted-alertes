@@ -294,6 +294,7 @@ async function handleConversationStep(chatId, text, conv) {
       excludeKw,
       active:    true,
       badge:     0,
+      createdAt: Date.now(),
     };
     DB.alerts.push(newAlert); dbSave();
     delete conversations[chatId];
@@ -390,9 +391,30 @@ async function pollAlert(a) {
       return true;
     });
 
-    const prev     = new Set(DB.seen[a.id] || []);
-    const newItems = items.filter(it => !prev.has(String(it.id)));
-    DB.seen[a.id]  = items.map(it => String(it.id));
+    // Set cumulatif — on ne réinitialise jamais, on ajoute seulement les nouveaux IDs
+    const prevSet  = new Set(DB.seen[a.id] || []);
+    const firstRun = prevSet.size === 0;
+
+    // Ignorer les annonces publiées AVANT la création de l'alerte
+    const alertCreatedAt = a.createdAt ? a.createdAt / 1000 : 0;
+    const freshItems = items.filter(it => {
+      const ts = it.created_at_ts ?? it.updated_at_ts ?? 0;
+      return ts === 0 || ts >= alertCreatedAt;
+    });
+
+    // Nouveaux items = pas encore vus ET frais
+    const newItems = firstRun ? [] : freshItems.filter(it => !prevSet.has(String(it.id)));
+
+    // Ajouter tous les IDs actuels au set cumulatif (sans réinitialiser)
+    const updatedSeen = new Set([...prevSet, ...items.map(it => String(it.id))]);
+    // Limiter la taille pour éviter une croissance infinie (garder les 2000 plus récents)
+    DB.seen[a.id] = updatedSeen.size > 2000
+      ? [...updatedSeen].slice(-2000)
+      : [...updatedSeen];
+
+    if (firstRun) {
+      console.log(`[poll] "${a.name}" : premier scan — ${items.length} annonce(s) mémorisées silencieusement`);
+    }
 
     if (newItems.length > 0) {
       console.log(`[poll] "${a.name}" : ${newItems.length} nouvelle(s)`);
@@ -481,7 +503,7 @@ const server = http.createServer(async (req, res) => {
 
   if (p === '/api/alerts' && me === 'POST') {
     const b = await readBody(req);
-    const a = { id: uid(), badge: 0, active: true, ...b };
+    const a = { id: uid(), badge: 0, active: true, createdAt: Date.now(), ...b };
     DB.alerts.push(a); dbSave();
     pollAlert(a);
     return jsonRes(res, 201, a);
