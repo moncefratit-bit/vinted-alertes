@@ -144,17 +144,19 @@ async function tgSend(text, token, chatId) {
 }
 
 function buildTgMessage(it, alertName, price) {
-  const href  = it.url ? (it.url.startsWith('http') ? it.url : 'https://www.vinted.fr'+it.url) : '';
-  const rep   = it.user?.feedback_reputation;
-  const stars = rep != null ? ` ★ ${(rep<=1?rep*5:rep).toFixed(1)}` : '';
-  const cond  = CONDITIONS[it.status] || '';
+  const href   = it.url ? (it.url.startsWith('http') ? it.url : 'https://www.vinted.fr'+it.url) : '';
+  const buyUrl = it.id ? `https://www.vinted.fr/transaction/buy/new?item_id=${it.id}` : href;
+  const rep    = it.user?.feedback_reputation;
+  const stars  = rep != null ? ` ★ ${(rep<=1?rep*5:rep).toFixed(1)}` : '';
+  const cond   = CONDITIONS[it.status] || '';
 
   let msg = `🛍 *${alertName}*\n`;
   msg += `📦 ${it.title}\n`;
   msg += `💶 *${formatPrice(price)}€*${stars}\n`;
   if (cond) msg += `🏷 ${cond}\n`;
   if (it.user?.login) msg += `👤 @${it.user.login}\n`;
-  msg += `\n${href}`;
+  msg += `\n🔗 [Voir l'annonce](${href})\n`;
+  msg += `🛒 [Acheter directement](${buyUrl})`;
   return msg;
 }
 
@@ -406,6 +408,7 @@ async function pollAlert(a) {
             title:     it.title,
             price:     formatPrice(price),
             url:       it.url ?? it.path,
+            itemId:    it.id,
             img:       it.photos?.[0]?.thumb_url ?? it.photo?.url,
             stars:     it.user?.feedback_reputation,
             condition: it.status,
