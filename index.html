@@ -370,7 +370,7 @@ function render(){
         const href  = l.url?(l.url.startsWith('http')?l.url:'https://www.vinted.fr'+l.url):'#';
         const stars = l.stars!=null?(l.stars<=1?l.stars*5:l.stars).toFixed(1):null;
         const cond  = CONDITIONS[l.condition] || '';
-        const buyUrl = l.itemId ? `https://www.vinted.fr/transaction/buy/new?item_id=${l.itemId}` : href;
+        const buyUrl = href; // lien direct vers l'annonce — bouton Acheter en haut de page
         html += `<div class="log-item">
           <a href="${esc(href)}" target="_blank" rel="noopener" style="display:flex;gap:12px;align-items:center;flex:1;min-width:0;text-decoration:none;color:inherit">
             ${l.img?`<img class="log-thumb" src="${esc(l.img)}" loading="lazy"/>`:`<div class="log-thumb"></div>`}
