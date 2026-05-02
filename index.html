@@ -84,6 +84,8 @@
   /* Filters bar */
   .filters-bar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
   .empty{text-align:center;padding:3.5rem 1rem;color:var(--text3);font-size:14px;line-height:1.7}
+  .btn-buy{display:inline-flex;align-items:center;gap:5px;background:var(--green);color:#fff;border:none;border-radius:8px;padding:7px 13px;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;flex-shrink:0;transition:opacity .15s}
+  .btn-buy:hover{opacity:.85}
   .footer-hint{font-size:11px;color:var(--text3);text-align:center;padding-top:12px}
   .status-ok{color:var(--green);font-size:13px}
   .status-err{color:var(--red);font-size:13px}
@@ -99,6 +101,7 @@ let S = {
   tab:       'alerts',
   form: { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' },
   open:      false,
+  editId:    null,   // id de l'alerte en cours d'édition (null = création)
   tg:        { token:'', chatId:'' },
   tgStatus:  '',
   loading:   true,
@@ -154,6 +157,43 @@ window.delAlert = async id => {
   S.alerts = S.alerts.filter(a => a.id!==id); render();
 };
 
+window.editAlert = id => {
+  const a = S.alerts.find(x => x.id === id);
+  if (!a) return;
+  // Pré-remplir le formulaire avec les valeurs de l'alerte
+  S.form = {
+    mode:      a.sourceUrl ? 'url' : 'manual',
+    name:      a.name      || '',
+    url:       a.sourceUrl || '',
+    kw:        a.kw        || '',
+    max:       a.max       || '',
+    min:       a.min       || '',
+    condition: a.condition || '',
+    stars:     a.stars     || '4',
+    excludeKw: a.excludeKw || '',
+  };
+  set({ open: true, editId: id });
+  // Scroll vers le formulaire
+  setTimeout(() => document.querySelector('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+};
+
+window.saveAlert = async () => {
+  const f  = S.form;
+  const id = S.editId;
+  let body;
+  if (f.mode === 'url') {
+    if (!f.url.trim()) return;
+    body = { name: f.name.trim()||f.url.trim(), sourceUrl: f.url.trim(), kw:'', stars: f.stars, excludeKw: f.excludeKw.trim() };
+  } else {
+    if (!f.kw.trim()) return;
+    body = { name: f.name.trim()||f.kw.trim(), sourceUrl:'', kw: f.kw.trim(), max: f.max, min: f.min, condition: f.condition, stars: f.stars, excludeKw: f.excludeKw.trim() };
+  }
+  const updated = await api('PUT', `/api/alerts/${id}`, body);
+  S.alerts = S.alerts.map(x => x.id === id ? updated : x);
+  S.form = { mode: f.mode, name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' };
+  set({ open: false, editId: null });
+};
+
 window.clrBadge = async id => {
   const u = await api('PUT', `/api/alerts/${id}`, { badge: 0 });
   S.alerts = S.alerts.map(x => x.id===id ? u : x);
@@ -167,7 +207,7 @@ window.clearLogs = async () => {
 };
 
 window.switchTab   = t => set({ tab: t });
-window.toggleForm  = () => set({ open: !S.open });
+window.toggleForm  = () => { if (S.open) { set({ open: false, editId: null }); } else { S.form = { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' }; set({ open: true, editId: null }); } };
 window.setMode     = m => { S.form.mode = m; render(); };
 window.fv          = (f,v) => { S.form[f] = v; };
 
@@ -212,7 +252,7 @@ function render(){
 
   let html = `
   <div class="header">
-    <div><h1>Vinted Alertes</h1><p>${activeCount} alerte${activeCount!==1?'s':''} active${activeCount!==1?'s':''} · cloud · 15s</p></div>
+    <div><h1>Vinted Alertes</h1><p>${activeCount} alerte${activeCount!==1?'s':''} active${activeCount!==1?'s':''} · cloud · 5s</p></div>
     <div class="top-right">
       <span class="dot ${activeCount>0?'on':'off'}"></span>
       <button class="btn-primary" onclick="toggleForm()">+ Alerte</button>
@@ -221,7 +261,7 @@ function render(){
 
   // ── Formulaire ──
   if (S.open) {
-    html += `<div class="card"><h2>Nouvelle alerte</h2>
+    html += `<div class="card"><h2>${S.editId ? "✏️ Modifier l'alerte" : "Nouvelle alerte"}</h2>
       <div class="mode-toggle">
         <button class="mode-btn ${f.mode==='url'?'active':''}" onclick="setMode('url')">🔗 URL Vinted</button>
         <button class="mode-btn ${f.mode==='manual'?'active':''}" onclick="setMode('manual')">⚙️ Saisie manuelle</button>
@@ -270,7 +310,7 @@ function render(){
         </div>
 
         <div class="form-actions">
-          <button class="btn-primary" onclick="addAlert()">Créer l'alerte</button>
+          <button class="btn-primary" onclick="S.editId ? saveAlert() : addAlert()">${S.editId ? "Sauvegarder" : "Créer l'alerte"}</button>
           <button class="btn-ghost" onclick="toggleForm()">Annuler</button>
         </div>
       </div>
@@ -300,6 +340,7 @@ function render(){
               ${a.badge>0?`<span class="tag tag-green" onclick="clrBadge('${a.id}')">+${a.badge} new</span>`:''}
             </div>
             <div class="alert-actions">
+              <button class="btn-icon" onclick="editAlert('${a.id}')" title="Modifier">✏️</button>
               <button class="btn-toggle ${a.active?'on':'off'}" onclick="toggleAlert('${a.id}')">${a.active?'Active':'Pause'}</button>
               <button class="btn-icon" onclick="delAlert('${a.id}')" style="color:var(--text3)">✕</button>
             </div>
@@ -329,19 +370,22 @@ function render(){
         const href  = l.url?(l.url.startsWith('http')?l.url:'https://www.vinted.fr'+l.url):'#';
         const stars = l.stars!=null?(l.stars<=1?l.stars*5:l.stars).toFixed(1):null;
         const cond  = CONDITIONS[l.condition] || '';
-        html += `<a class="log-item" href="${esc(href)}" target="_blank" rel="noopener">
-          ${l.img?`<img class="log-thumb" src="${esc(l.img)}" loading="lazy"/>`:`<div class="log-thumb"></div>`}
-          <div class="log-body">
-            <div class="log-title">${esc(l.title)}</div>
-            <div class="log-meta">
-              <span class="log-price">${l.price!=='?'?l.price+'€':'—'}</span>
-              ${stars?`<span class="log-stars">★ ${stars}</span>`:''}
-              ${cond?`<span class="log-condition">${cond}</span>`:''}
-              <span class="log-info">${esc(l.aname)} · ${fmtDate(l.ts)} ${fmtTime(l.ts)}</span>
+        const buyUrl = l.itemId ? `https://www.vinted.fr/transaction/buy/new?item_id=${l.itemId}` : href;
+        html += `<div class="log-item">
+          <a href="${esc(href)}" target="_blank" rel="noopener" style="display:flex;gap:12px;align-items:center;flex:1;min-width:0;text-decoration:none;color:inherit">
+            ${l.img?`<img class="log-thumb" src="${esc(l.img)}" loading="lazy"/>`:`<div class="log-thumb"></div>`}
+            <div class="log-body">
+              <div class="log-title">${esc(l.title)}</div>
+              <div class="log-meta">
+                <span class="log-price">${l.price!=='?'?l.price+'€':'—'}</span>
+                ${stars?`<span class="log-stars">★ ${stars}</span>`:''}
+                ${cond?`<span class="log-condition">${cond}</span>`:''}
+                <span class="log-info">${esc(l.aname)} · ${fmtDate(l.ts)} ${fmtTime(l.ts)}</span>
+              </div>
             </div>
-          </div>
-          <span style="font-size:14px;color:var(--text3);flex-shrink:0;margin-left:4px">→</span>
-        </a>`;
+          </a>
+          <a class="btn-buy" href="${esc(buyUrl)}" target="_blank" rel="noopener">🛒 Acheter</a>
+        </div>`;
       });
     }
   }
