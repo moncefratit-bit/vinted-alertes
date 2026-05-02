@@ -145,7 +145,7 @@ async function tgSend(text, token, chatId) {
 
 function buildTgMessage(it, alertName, price) {
   const href   = it.url ? (it.url.startsWith('http') ? it.url : 'https://www.vinted.fr'+it.url) : '';
-  const buyUrl = it.id ? `https://www.vinted.fr/transaction/buy/new?item_id=${it.id}` : href;
+  const buyUrl = href; // lien direct vers l'annonce
   const rep    = it.user?.feedback_reputation;
   const stars  = rep != null ? ` ★ ${(rep<=1?rep*5:rep).toFixed(1)}` : '';
   const cond   = CONDITIONS[it.status] || '';
@@ -155,8 +155,7 @@ function buildTgMessage(it, alertName, price) {
   msg += `💶 *${formatPrice(price)}€*${stars}\n`;
   if (cond) msg += `🏷 ${cond}\n`;
   if (it.user?.login) msg += `👤 @${it.user.login}\n`;
-  msg += `\n🔗 [Voir l'annonce](${href})\n`;
-  msg += `🛒 [Acheter directement](${buyUrl})`;
+  msg += `\n🛒 [Voir l'annonce et acheter](${href})`;
   return msg;
 }
 
