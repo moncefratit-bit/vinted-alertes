@@ -120,6 +120,8 @@ async function loadAll() {
 }
 
 setInterval(async () => {
+  // Ne pas rafraîchir si le formulaire est ouvert (évite la perte de focus)
+  if (S.open) return;
   if (['logs','alerts'].includes(S.tab)) {
     const [alerts, logs] = await Promise.all([api('GET','/api/alerts'), api('GET','/api/logs')]);
     S.alerts = alerts; S.logs = logs; render();
@@ -419,7 +421,24 @@ function render(){
   }
 
   html += `<div class="footer-hint">Serveur cloud · polling toutes les 15s · PC peut être éteint</div>`;
+  // Sauvegarder le focus et la position du curseur avant de re-render
+  const focused = document.activeElement;
+  const focusedId = focused?.id || null;
+  const selStart  = focused?.selectionStart ?? null;
+  const selEnd    = focused?.selectionEnd   ?? null;
+
   el.innerHTML = html;
+
+  // Restaurer le focus après render
+  if (focusedId) {
+    const el2 = document.getElementById(focusedId);
+    if (el2) {
+      el2.focus();
+      if (selStart !== null) {
+        try { el2.setSelectionRange(selStart, selEnd); } catch {}
+      }
+    }
+  }
 }
 
 loadAll();
