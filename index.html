@@ -99,7 +99,7 @@ let S = {
   alerts:    [],
   logs:      [],
   tab:       'alerts',
-  form: { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' },
+  form: { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'', brandId:'', brandName:'', catalogId:'', platformId:'' },
   open:      false,
   editId:    null,   // id de l'alerte en cours d'édition (null = création)
   tg:        { token:'', chatId:'' },
@@ -138,11 +138,11 @@ window.addAlert = async () => {
     body = { name: f.name.trim()||f.url.trim(), sourceUrl: f.url.trim(), kw:'', stars: f.stars, excludeKw: f.excludeKw.trim() };
   } else {
     if (!f.kw.trim()) return;
-    body = { name: f.name.trim()||f.kw.trim(), kw: f.kw.trim(), max: f.max, min: f.min, condition: f.condition, stars: f.stars, excludeKw: f.excludeKw.trim() };
+    body = { name: f.name.trim()||f.kw.trim(), kw: f.kw.trim(), max: f.max, min: f.min, condition: f.condition, stars: f.stars, excludeKw: f.excludeKw.trim(), brandId: f.brandId, brandName: f.brandName, catalogId: f.catalogId, platformId: f.platformId };
   }
   const a = await api('POST', '/api/alerts', body);
   S.alerts = [...S.alerts, a];
-  S.form = { mode: f.mode, name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' };
+  S.form = { mode: f.mode, name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'', brandId:'', brandName:'', catalogId:'', platformId:'' };
   set({ open: false });
 };
 
@@ -164,15 +164,19 @@ window.editAlert = id => {
   if (!a) return;
   // Pré-remplir le formulaire avec les valeurs de l'alerte
   S.form = {
-    mode:      a.sourceUrl ? 'url' : 'manual',
-    name:      a.name      || '',
-    url:       a.sourceUrl || '',
-    kw:        a.kw        || '',
-    max:       a.max       || '',
-    min:       a.min       || '',
-    condition: a.condition || '',
-    stars:     a.stars     || '4',
-    excludeKw: a.excludeKw || '',
+    mode:       a.sourceUrl ? 'url' : 'manual',
+    name:       a.name       || '',
+    url:        a.sourceUrl  || '',
+    kw:         a.kw         || '',
+    max:        a.max        || '',
+    min:        a.min        || '',
+    condition:  a.condition  || '',
+    stars:      a.stars      || '4',
+    excludeKw:  a.excludeKw  || '',
+    brandId:    a.brandId    || '',
+    brandName:  a.brandName  || '',
+    catalogId:  a.catalogId  || '',
+    platformId: a.platformId || '',
   };
   set({ open: true, editId: id });
   // Scroll vers le formulaire
@@ -188,11 +192,11 @@ window.saveAlert = async () => {
     body = { name: f.name.trim()||f.url.trim(), sourceUrl: f.url.trim(), kw:'', stars: f.stars, excludeKw: f.excludeKw.trim() };
   } else {
     if (!f.kw.trim()) return;
-    body = { name: f.name.trim()||f.kw.trim(), sourceUrl:'', kw: f.kw.trim(), max: f.max, min: f.min, condition: f.condition, stars: f.stars, excludeKw: f.excludeKw.trim() };
+    body = { name: f.name.trim()||f.kw.trim(), sourceUrl:'', kw: f.kw.trim(), max: f.max, min: f.min, condition: f.condition, stars: f.stars, excludeKw: f.excludeKw.trim(), brandId: f.brandId, brandName: f.brandName, catalogId: f.catalogId, platformId: f.platformId };
   }
   const updated = await api('PUT', `/api/alerts/${id}`, body);
   S.alerts = S.alerts.map(x => x.id === id ? updated : x);
-  S.form = { mode: f.mode, name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' };
+  S.form = { mode: f.mode, name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'', brandId:'', brandName:'', catalogId:'', platformId:'' };
   set({ open: false, editId: null });
 };
 
@@ -209,9 +213,37 @@ window.clearLogs = async () => {
 };
 
 window.switchTab   = t => set({ tab: t });
-window.toggleForm  = () => { if (S.open) { set({ open: false, editId: null }); } else { S.form = { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'' }; set({ open: true, editId: null }); } };
+window.toggleForm  = () => { if (S.open) { set({ open: false, editId: null }); } else { S.form = { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'', brandId:'', brandName:'', catalogId:'', platformId:'' }; set({ open: true, editId: null }); } };
 window.setMode     = m => { S.form.mode = m; render(); };
 window.fv          = (f,v) => { S.form[f] = v; };
+
+// ── Données Vinted (catégories, plateformes, marques) ──────────────────────────
+let CATEGORIES = [], PLATFORMS = [], brandResults = [], brandTimer = null;
+
+async function loadFilterData() {
+  try {
+    const [cats, plats] = await Promise.all([api('GET','/api/categories'), api('GET','/api/platforms')]);
+    CATEGORIES = cats; PLATFORMS = plats;
+  } catch {}
+}
+loadFilterData();
+
+window.searchBrand = (q) => {
+  S.form.brandName = q; S.form.brandId = '';
+  clearTimeout(brandTimer);
+  if (q.length < 2) { brandResults = []; render(); return; }
+  brandTimer = setTimeout(async () => {
+    brandResults = await api('GET', `/api/brands?q=${encodeURIComponent(q)}`);
+    render();
+  }, 350);
+};
+
+window.selectBrand = (id, label) => {
+  S.form.brandId   = id;
+  S.form.brandName = label;
+  brandResults     = [];
+  render();
+};
 
 window.testTelegram = async () => {
   const token  = document.getElementById('tg-token')?.value.trim()  || '';
@@ -304,6 +336,32 @@ function render(){
 
     html += `
         <hr class="section-sep">
+        <div class="section-title">Filtres Vinted</div>
+        <div style="position:relative">
+          <div class="field-label">Marque</div>
+          <input type="text" id="brand-input" placeholder="ex: Nike, Apple, Sony…" value="${esc(f.brandName)}" oninput="searchBrand(this.value)" autocomplete="off" />
+          ${brandResults.length > 0 ? `<div style="position:absolute;top:100%;left:0;right:0;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);z-index:99;max-height:180px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)">
+            ${brandResults.map(b=>`<div onclick="selectBrand('${b.id}','${esc(b.label)}')" style="padding:9px 12px;font-size:14px;cursor:pointer;border-bottom:0.5px solid var(--border)" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+              ${esc(b.label)}
+            </div>`).join('')}
+          </div>` : ''}
+          ${f.brandId ? `<div style="margin-top:4px"><span class="tag tag-blue">✓ ${esc(f.brandName)} <span onclick="S.form.brandId='';S.form.brandName='';brandResults=[];render()" style="cursor:pointer;margin-left:4px">✕</span></span></div>` : ''}
+        </div>
+        <div class="row2">
+          <div>
+            <div class="field-label">Catégorie</div>
+            <select onchange="fv('catalogId',this.value)">
+              ${CATEGORIES.map(c=>`<option value="${c.id}"${f.catalogId===c.id?' selected':''}>${esc(c.label)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <div class="field-label">Plateforme gaming</div>
+            <select onchange="fv('platformId',this.value)">
+              ${PLATFORMS.map(p=>`<option value="${p.id}"${f.platformId===p.id?' selected':''}>${esc(p.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <hr class="section-sep">
         <div class="section-title">Filtres avancés</div>
         <div>
           <div class="field-label">Mots à exclure</div>
@@ -351,6 +409,9 @@ function render(){
             ${a.sourceUrl?`<span class="tag tag-blue" title="${esc(a.sourceUrl)}">🔗 URL</span>`:`<span class="tag tag-gray">${esc(a.kw)}</span>`}
             ${a.max?`<span class="tag tag-blue">≤${a.max}€</span>`:''}
             ${a.min?`<span class="tag tag-blue">≥${a.min}€</span>`:''}
+            ${a.brandName?`<span class="tag tag-blue">${esc(a.brandName)}</span>`:''}
+            ${a.catalogId&&CATEGORIES.find(c=>c.id===a.catalogId)?`<span class="tag tag-gray">${esc(CATEGORIES.find(c=>c.id===a.catalogId).label)}</span>`:''}
+            ${a.platformId&&PLATFORMS.find(p=>p.id===a.platformId)?`<span class="tag tag-gray">${esc(PLATFORMS.find(p=>p.id===a.platformId).label)}</span>`:''}
             ${parseFloat(a.stars||0)>0?`<span class="tag tag-amber">★ ${a.stars}+</span>`:''}
             ${excl.map(kw=>`<span class="tag tag-red">✕ ${esc(kw)}</span>`).join('')}
           </div>
