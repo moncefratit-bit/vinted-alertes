@@ -613,6 +613,27 @@ const server = http.createServer(async (req, res) => {
 
   if (p === '/health') return jsonRes(res, 200, { ok: true, alerts: DB.alerts.filter(a=>a.active).length, uptime: Math.round(process.uptime()) });
 
+  // Proxy d'images Vinted (contourne le blocage CORS du navigateur)
+  if (p === '/img' && me === 'GET') {
+    const imgUrl = u.searchParams.get('url');
+    if (!imgUrl || !imgUrl.startsWith('https://')) { res.writeHead(400); res.end(); return; }
+    try {
+      const imgU = new URL(imgUrl);
+      const req  = https.request({ hostname: imgU.hostname, path: imgU.pathname + imgU.search, method: 'GET', headers: { 'User-Agent': UA, 'Referer': 'https://www.vinted.fr/' }, timeout: 10000 }, proxyRes => {
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type':  proxyRes.headers['content-type'] || 'image/jpeg',
+          'Cache-Control': 'public, max-age=86400',
+          'Access-Control-Allow-Origin': '*',
+        });
+        proxyRes.pipe(res);
+      });
+      req.on('error', () => { res.writeHead(502); res.end(); });
+      req.on('timeout', () => { req.destroy(); res.writeHead(504); res.end(); });
+      req.end();
+    } catch { res.writeHead(400); res.end(); }
+    return;
+  }
+
   if (p === '/api/brands' && me === 'GET') {
     const q = u.searchParams.get('q') || '';
     if (q.length < 2) return jsonRes(res, 200, []);
