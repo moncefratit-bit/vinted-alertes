@@ -381,10 +381,13 @@ function buildApiUrl(a) {
     } catch {}
   }
   const p = new URLSearchParams({ per_page:'24', order:'newest_first', currency:'EUR' });
-  if (a.kw)        p.set('search_text', a.kw);
-  if (a.max)       p.set('price_to',    a.max);
-  if (a.min)       p.set('price_from',  a.min);
-  if (a.condition) p.set('status[]',    a.condition);
+  if (a.kw)        p.set('search_text',  a.kw);
+  if (a.max)       p.set('price_to',     a.max);
+  if (a.min)       p.set('price_from',   a.min);
+  if (a.condition) p.set('status[]',     a.condition);
+  if (a.brandId)   p.set('brand_id[]',   a.brandId);
+  if (a.catalogId) p.set('catalog[]',    a.catalogId);
+  if (a.platformId)p.set('catalog[]',    a.platformId);
   return `${API}?${p}`;
 }
 
@@ -481,6 +484,51 @@ async function pollAll() {
   } finally { polling = false; }
 }
 
+// ── Catalogues Vinted (catégories & plateformes) ────────────────────────────
+const VINTED_CATEGORIES = [
+  { id:'',    label:'Toutes catégories' },
+  { id:'4',   label:'Vêtements — Homme' },
+  { id:'1904',label:'Vêtements — Femme' },
+  { id:'1',   label:'Vêtements — Enfant' },
+  { id:'1597',label:'Maison & Déco' },
+  { id:'2485',label:'Électronique' },
+  { id:'470', label:'Consoles de jeux' },
+  { id:'472', label:'Jeux vidéo' },
+  { id:'478', label:'Manettes & Accessoires gaming' },
+  { id:'2470',label:'Téléphones & Smartphones' },
+  { id:'2472',label:'Ordinateurs & Laptops' },
+  { id:'2093',label:'Livres' },
+  { id:'139', label:'Sports & Loisirs' },
+  { id:'2049',label:'Jouets & Jeux' },
+  { id:'79',  label:'Sacs & Maroquinerie' },
+  { id:'2',   label:'Chaussures — Homme' },
+  { id:'1906',label:'Chaussures — Femme' },
+];
+
+const GAMING_PLATFORMS = [
+  { id:'',     label:'Toutes plateformes' },
+  { id:'2615', label:'PlayStation 5' },
+  { id:'2614', label:'PlayStation 4' },
+  { id:'2613', label:'PlayStation 3' },
+  { id:'2619', label:'Xbox Series X/S' },
+  { id:'2618', label:'Xbox One' },
+  { id:'2617', label:'Xbox 360' },
+  { id:'2621', label:'Nintendo Switch' },
+  { id:'2622', label:'Nintendo Switch Lite' },
+  { id:'2620', label:'Nintendo 3DS' },
+  { id:'2626', label:'PC' },
+];
+
+// API Vinted pour la recherche de marques
+async function searchBrands(query) {
+  try {
+    const p   = new URLSearchParams({ per_page: '20', q: query });
+    const r   = await fetchApi(`https://www.vinted.fr/api/v2/brands?${p}`);
+    const d   = JSON.parse(r.body);
+    return (d.brands || []).map(b => ({ id: String(b.id), label: b.title }));
+  } catch { return []; }
+}
+
 // ── Serveur HTTP ──────────────────────────────────────────────────────────────
 function jsonRes(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -564,6 +612,16 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === '/health') return jsonRes(res, 200, { ok: true, alerts: DB.alerts.filter(a=>a.active).length, uptime: Math.round(process.uptime()) });
+
+  if (p === '/api/brands' && me === 'GET') {
+    const q = u.searchParams.get('q') || '';
+    if (q.length < 2) return jsonRes(res, 200, []);
+    const brands = await searchBrands(q);
+    return jsonRes(res, 200, brands);
+  }
+
+  if (p === '/api/categories' && me === 'GET') return jsonRes(res, 200, VINTED_CATEGORIES);
+  if (p === '/api/platforms'  && me === 'GET') return jsonRes(res, 200, GAMING_PLATFORMS);
 
   // ── Réception des messages Telegram (webhook) ──
   if (p === '/webhook/telegram' && me === 'POST') {
