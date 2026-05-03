@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const PORT    = process.env.PORT || 3457;
 const DATA    = path.join('/tmp', 'vinted_data.json');
 const API     = 'https://www.vinted.fr/api/v2/catalog/items';
-const POLL_MS = 5000;
+const POLL_MS = 3000;
 
 const uid = () => crypto.randomBytes(4).toString('hex');
 
@@ -124,12 +124,17 @@ function isExcluded(it, excludeList) {
 
 
 // ── Telegram ──────────────────────────────────────────────────────────────────
-async function tgSend(text, token, chatId) {
+async function tgSend(text, token, chatId, buttons) {
   const tok = token || DB.tg.token;
   const cid = chatId || DB.tg.chatId;
   if (!tok || !cid) return { ok: false, reason: 'no config' };
   try {
-    const body = JSON.stringify({ chat_id: cid, text, parse_mode: 'Markdown', disable_web_page_preview: false });
+    const payload = { chat_id: cid, text, parse_mode: 'Markdown', disable_web_page_preview: true };
+    // Boutons inline directement visibles sous la notif sans ouvrir le message
+    if (buttons && buttons.length > 0) {
+      payload.reply_markup = { inline_keyboard: [buttons] };
+    }
+    const body = JSON.stringify(payload);
     const u    = new URL(`https://api.telegram.org/bot${tok}/sendMessage`);
     const r    = await new Promise((resolve, reject) => {
       const req = https.request({ hostname: u.hostname, path: u.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 10000 }, res => {
@@ -144,19 +149,28 @@ async function tgSend(text, token, chatId) {
 }
 
 function buildTgMessage(it, alertName, price) {
-  const href   = it.url ? (it.url.startsWith('http') ? it.url : 'https://www.vinted.fr'+it.url) : '';
-  const buyUrl = href; // lien direct vers l'annonce
+  // URL de l'annonce — format vinted.fr/items/ID (toujours valide)
+  const itemId = it.id;
+  const href   = itemId
+    ? `https://www.vinted.fr/items/${itemId}`
+    : (it.url ? (it.url.startsWith('http') ? it.url : 'https://www.vinted.fr'+it.url) : '');
   const rep    = it.user?.feedback_reputation;
   const stars  = rep != null ? ` ★ ${(rep<=1?rep*5:rep).toFixed(1)}` : '';
   const cond   = CONDITIONS[it.status] || '';
 
+  // Texte court et lisible — les détails sont dans les boutons
   let msg = `🛍 *${alertName}*\n`;
-  msg += `📦 ${it.title}\n`;
-  msg += `💶 *${formatPrice(price)}€*${stars}\n`;
-  if (cond) msg += `🏷 ${cond}\n`;
-  if (it.user?.login) msg += `👤 @${it.user.login}\n`;
-  msg += `\n🛒 [Voir l'annonce et acheter](${href})`;
-  return msg;
+  msg += `${it.title}\n`;
+  msg += `💶 *${formatPrice(price)}€*${stars}`;
+  if (cond) msg += ` · ${cond}`;
+  if (it.user?.login) msg += `\n👤 ${it.user.login}`;
+
+  // Boutons inline visibles directement dans la notif Telegram
+  const buttons = href ? [
+    { text: '🛒 Voir & Acheter', url: href },
+  ] : [];
+
+  return { text: msg, buttons };
 }
 
 // ── Bot Telegram — commandes ─────────────────────────────────────────────────
@@ -428,7 +442,7 @@ async function pollAlert(a) {
             aname:     a.name,
             title:     it.title,
             price:     formatPrice(price),
-            url:       it.url ?? it.path,
+            url:       it.id ? `https://www.vinted.fr/items/${it.id}` : (it.url ?? it.path),
             itemId:    it.id,
             img:       it.photos?.[0]?.thumb_url ?? it.photo?.url,
             stars:     it.user?.feedback_reputation,
@@ -443,9 +457,9 @@ async function pollAlert(a) {
       a.badge = (a.badge || 0) + newItems.length;
 
       for (const it of newItems.slice(0, 5)) {
-        const price = extractPrice(it);
-        const msg   = buildTgMessage(it, a.name, price);
-        await tgSend(msg);
+        const price  = extractPrice(it);
+        const { text, buttons } = buildTgMessage(it, a.name, price);
+        await tgSend(text, null, null, buttons);
         await new Promise(r => setTimeout(r, 400));
       }
       dbSave();
