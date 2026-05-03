@@ -105,6 +105,8 @@ let S = {
   tg:        { token:'', chatId:'' },
   tgStatus:  '',
   loading:   true,
+  notifPerm: typeof Notification !== 'undefined' ? Notification.permission : 'denied',
+  seenLogIds: new Set(),
 };
 
 async function api(method, path, body) {
@@ -120,11 +122,27 @@ async function loadAll() {
 }
 
 setInterval(async () => {
-  // Ne pas rafraîchir si le formulaire est ouvert (évite la perte de focus)
   if (S.open) return;
   if (['logs','alerts'].includes(S.tab)) {
+    const prevLogIds = new Set(S.logs.map(l => l.id));
     const [alerts, logs] = await Promise.all([api('GET','/api/alerts'), api('GET','/api/logs')]);
-    S.alerts = alerts; S.logs = logs; render();
+    S.alerts = alerts; S.logs = logs;
+
+    // Notifications PC pour les nouvelles annonces
+    if (Notification.permission === 'granted') {
+      logs.filter(l => !prevLogIds.has(l.id) && !S.seenLogIds.has(l.id)).forEach(l => {
+        S.seenLogIds.add(l.id);
+        try {
+          const n = new Notification('Vinted — ' + l.aname, {
+            body: l.title + (l.price !== '?' ? ' — ' + l.price + '€' : ''),
+            icon: l.img ? `/img?url=${encodeURIComponent(l.img)}` : undefined,
+            tag:  'vinted-' + l.id,
+          });
+          n.onclick = () => { window.open(l.url || '#', '_blank'); n.close(); };
+        } catch {}
+      });
+    }
+    render();
   }
 }, 5000);
 
@@ -216,6 +234,10 @@ window.switchTab   = t => set({ tab: t });
 window.toggleForm  = () => { if (S.open) { set({ open: false, editId: null }); } else { S.form = { mode:'url', name:'', url:'', kw:'', max:'', min:'', condition:'', stars:'4', excludeKw:'', brandId:'', brandName:'', catalogId:'', platformId:'' }; set({ open: true, editId: null }); } };
 window.setMode     = m => { S.form.mode = m; render(); };
 window.fv          = (f,v) => { S.form[f] = v; };
+window.askNotifPerm = async () => {
+  const p = await Notification.requestPermission();
+  set({ notifPerm: p });
+};
 
 // ── Données Vinted (catégories, plateformes, marques) ──────────────────────────
 let CATEGORIES = [], PLATFORMS = [], brandResults = [], brandTimer = null;
@@ -286,12 +308,17 @@ function render(){
 
   let html = `
   <div class="header">
-    <div><h1>Vinted Alertes</h1><p>${activeCount} alerte${activeCount!==1?'s':''} active${activeCount!==1?'s':''} · cloud · 5s</p></div>
+    <div><h1>Vinted Alertes</h1><p>${activeCount} alerte${activeCount!==1?'s':''} active${activeCount!==1?'s':''} · cloud · 3s</p></div>
     <div class="top-right">
       <span class="dot ${activeCount>0?'on':'off'}"></span>
       <button class="btn-primary" onclick="toggleForm()">+ Alerte</button>
     </div>
-  </div>`;
+  </div>
+  ${S.notifPerm !== 'granted' && typeof Notification !== 'undefined' ? `
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--amber-bg);border:0.5px solid var(--amber-bd);border-radius:var(--radius);padding:10px 14px;margin-bottom:1rem">
+    <span style="font-size:13px;color:var(--amber)">🔔 Active les notifications PC pour recevoir les alertes même fenêtre en arrière-plan</span>
+    <button onclick="askNotifPerm()" style="background:var(--amber);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;font-family:var(--font)">Activer</button>
+  </div>` : ''}`;
 
   // ── Formulaire ──
   if (S.open) {
@@ -436,7 +463,7 @@ function render(){
         const buyUrl = href; // lien direct vers l'annonce — bouton Acheter en haut de page
         html += `<div class="log-item">
           <a href="${esc(href)}" target="_blank" rel="noopener" style="display:flex;gap:12px;align-items:center;flex:1;min-width:0;text-decoration:none;color:inherit">
-            ${l.img?`<img class="log-thumb" src="${esc(l.img)}" loading="lazy"/>`:`<div class="log-thumb"></div>`}
+            ${l.img?`<img class="log-thumb" src="/img?url=${encodeURIComponent(l.img)}" loading="lazy" onerror="this.style.display='none';"/>`:`<div class="log-thumb"></div>`}
             <div class="log-body">
               <div class="log-title">${esc(l.title)}</div>
               <div class="log-meta">
